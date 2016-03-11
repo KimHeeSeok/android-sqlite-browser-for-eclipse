@@ -13,26 +13,39 @@
 package com.questoid.sqlitebrowser.view;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.jface.viewers.TableViewer;
 import org.eclipse.jface.viewers.TreeViewer;
+import org.eclipse.jface.viewers.ViewerCell;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.dnd.Clipboard;
+import org.eclipse.swt.dnd.TextTransfer;
+import org.eclipse.swt.dnd.Transfer;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.events.SelectionListener;
+import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Event;
+import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Listener;
+import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.TabFolder;
 import org.eclipse.swt.widgets.TabItem;
 import org.eclipse.swt.widgets.Table;
@@ -155,20 +168,21 @@ public class SqliteBrowserView extends ViewPart {
 		});
 
 		// cell double click listener.
-		// guiTable.addListener(SWT.MouseDoubleClick, new Listener() {
-		// @Override
-		// public void handleEvent(final Event event) {
-		// final Point pt = new Point(event.x, event.y);
-		//
-		// final ViewerCell cell = guiTableViewer.getCell(pt);
-		// final int column = cell.getColumnIndex();
-		//
-		// final DataRow row = (DataRow) cell.getElement();
-		// final Object cellData = row.getValueAt(column);
-		//
-		// handleCellData(cellData);
-		// }
-		// });
+		guiTable.addListener(SWT.MouseDoubleClick, new Listener() {
+
+			@Override
+			public void handleEvent(final Event event) {
+				final Point pt = new Point(event.x, event.y);
+
+				final ViewerCell cell = guiTableViewer.getCell(pt);
+				final int column = cell.getColumnIndex();
+
+				final DataRow row = (DataRow) cell.getElement();
+				final Object cellData = row.getValueAt(column);
+
+				handleCellData(cellData);
+			}
+		});
 
 		guiTableCombo.select(0);
 		browseDataTabItem.setControl(dataComposite);
@@ -222,9 +236,15 @@ public class SqliteBrowserView extends ViewPart {
 			final ResultSetMetaData rsMeta = rs.getMetaData();
 			int rowId = 0;
 			while (rs.next()) {
-				final Object[] row = new Object[rsMeta.getColumnCount()];
-				for (int i = 0; i < rsMeta.getColumnCount(); i++) {
-					row[i] = rs.getString(i+1);
+				final int columnCount = rsMeta.getColumnCount();
+				final Object[] row = new Object[columnCount];
+				for (int i = 0; i < columnCount; i++) {
+
+					if (Types.BLOB == rsMeta.getColumnType(i + 1)) {
+						row[i] = rs.getBytes(i + 1); // need buffer?
+					} else {
+						row[i] = rs.getString(i + 1);
+					}
 				}
 				data.add(new DataRow(row, rowId));
 				rowId++;
@@ -273,44 +293,42 @@ public class SqliteBrowserView extends ViewPart {
 		dbFile = new File(tempDbFilePath);
 	}
 
-	// private void handleCellData(final Object cellData) {
-	//
-	// if (cellData instanceof SqlJetMemoryPointer) {
-	// // save as file
-	// final Shell shell = new Shell(Display.getDefault());
-	//
-	// final FileDialog dialog = new FileDialog(shell, SWT.SAVE);
-	// dialog.setFilterNames(new String[] { "All Files (*.*)" });
-	// dialog.setFilterExtensions(new String[] { "*.*" }); // Windows
-	// dialog.setFilterPath(System.getProperty("user.home"));
-	//
-	// final String fileName = dialog.open();
-	// if (fileName != null) {
-	//
-	// final SqlJetMemoryPointer p = (SqlJetMemoryPointer) cellData;
-	// final int count = p.remaining();
-	// RandomAccessFile file = null;
-	// try {
-	// file = new RandomAccessFile(fileName, "rw");
-	// p.writeToFile(file, 0, count);
-	// file.close();
-	// } catch (final IOException e) {
-	// e.printStackTrace();
-	// } finally {
-	// if (file != null) {
-	// try {
-	// file.close();
-	// } catch (final IOException e) {
-	// }
-	// }
-	// }
-	// }
-	// } else if (cellData != null) {
-	// // copy clipboard
-	// final Clipboard cb = new Clipboard(Display.getDefault());
-	// final TextTransfer textTransfer = TextTransfer.getInstance();
-	// cb.setContents(new Object[] { cellData.toString() }, new Transfer[] {
-	// textTransfer });
-	// }
-	// }
+	private void handleCellData(final Object cellData) {
+
+		if (cellData instanceof String) {
+			// copy to clipboard
+			final Clipboard cb = new Clipboard(Display.getDefault());
+			final TextTransfer textTransfer = TextTransfer.getInstance();
+			cb.setContents(new Object[] { cellData.toString() }, new Transfer[] { textTransfer });
+		} else if (cellData instanceof byte[]) {
+			// save as file
+			final Shell shell = new Shell(Display.getDefault());
+
+			final FileDialog dialog = new FileDialog(shell, SWT.SAVE);
+			dialog.setFilterNames(new String[] { "All Files (*.*)" });
+			dialog.setFilterExtensions(new String[] { "*.*" }); // Windows
+			dialog.setFilterPath(System.getProperty("user.home"));
+
+			final String fileName = dialog.open();
+			if (fileName != null) {
+
+				final byte[] bytes = (byte[]) cellData;
+				RandomAccessFile file = null;
+				try {
+					file = new RandomAccessFile(fileName, "rw");
+					file.write(bytes);
+					file.close();
+				} catch (final IOException e) {
+					e.printStackTrace();
+				} finally {
+					if (file != null) {
+						try {
+							file.close();
+						} catch (final IOException e) {
+						}
+					}
+				}
+			}
+		}
+	}
 }
