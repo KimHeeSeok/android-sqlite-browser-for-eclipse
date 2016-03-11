@@ -296,12 +296,12 @@ public class SqliteBrowserView extends ViewPart {
 	private void handleCellData(final Object cellData) {
 
 		if (cellData instanceof String) {
-			// copy to clipboard
+			// copy to clip board.
 			final Clipboard cb = new Clipboard(Display.getDefault());
 			final TextTransfer textTransfer = TextTransfer.getInstance();
 			cb.setContents(new Object[] { cellData.toString() }, new Transfer[] { textTransfer });
 		} else if (cellData instanceof byte[]) {
-			// save as file
+			// save as a file.
 			final Shell shell = new Shell(Display.getDefault());
 
 			final FileDialog dialog = new FileDialog(shell, SWT.SAVE);
